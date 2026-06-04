@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Portal de Amiloidosis - Evaluación Médica</title>
+  <!-- Tailwind CSS para el diseño visual limpio -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React y ReactDOM desde CDN -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <!-- Babel para compilar el código JSX en tiempo de ejecución en el navegador -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans">
+
+  <!-- Contenedor donde se montará nuestra aplicación React -->
+  <div id="root"></div>
+
+  <!-- Tu código de React (el mismo que diseñamos en Canvas) adaptado para ejecutarse aquí -->
+  <script type="text/babel">
+    const { useState } = React;
+
+    const PAISES = [
+      "Argentina", "Bolivia", "Brasil", "Chile", "Colombia", "Costa Rica", "Cuba", 
+      "Ecuador", "El Salvador", "España", "Guatemala", "Honduras", "México", 
+      "Nicaragua", "Panamá", "Paraguay", "Perú", "Puerto Rico", "República Dominicana", 
+      "Uruguay", "Venezuela", "Otro"
+    ];
+
+    const MOCK_DB_INITIAL = [
+      { timestamp: "2026-06-01 10:24", dni: "12345678", especialidad: "Cardiología", pais: "Argentina", experiencia: "11-20", setting: "Hospital público", score: 8.5, nivel: "Alto" },
+      { timestamp: "2026-06-01 14:15", dni: "98765432", especialidad: "Neurología", pais: "España", experiencia: "5-10", setting: "Mixto", score: 7.0, nivel: "Intermedio" }
+    ];
+
+    function App() {
+      const [currentStep, setCurrentStep] = useState(0);
+      const [formData, setFormData] = useState({
+        dni: "", especialidad: "", pais: "", experiencia: "", setting: "", pacientesAnuales: "",
+        percepcionConocimiento: "", subtiposConocidos: [], educacionPrevia: "",
+        redFlags: [], sugestivoATTR: "", sugestivoAL: "", icfepCase: "",  neuropatiaCase: "",
+        descarteAL: [], rolGammagrafia: "", referenciaATTR: "", centroReferencia: "",
+        frecuenciaSospecha: "", derivacionHabitual: "", barreraDiagnostico: ""
+      });
+
+      const [dbData, setDbData] = useState(MOCK_DB_INITIAL);
+      const [webhookUrl, setWebhookUrl] = useState("");
+      const [isSubmitting, setIsSubmitting] = useState(false);
+      const [errors, setErrors] = useState({});
+      const [calculatedScore, setCalculatedScore] = useState(0);
+      const [scoreLevel, setScoreLevel] = useState("");
+      const [showScriptModal, setShowScriptModal] = useState(false);
+      const [showAdminLogin, setShowAdminLogin] = useState(false);
+      const [inputPasscode, setInputPasscode] = useState("");
+      const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+      const [toast, setToast] = useState({ show: false, message: "", type: "info" });
+
+      const triggerToast = (message, type = "info") => {
+        setToast({ show: true, message, type });
+        setTimeout(() => setToast(prev => ({ ...prev, show: false })), 4000);
+      };
+
+      const calculateAKS = (data) => {
+        let score = 0;
+        if (data.sugestivoATTR === "Túnel carpiano bilateral") score += 1.5;
+        if (data.sugestivoAL === "Macroglosia") score += 1.5;
+        if (data.icfepCase === "Siempre" || data.icfepCase === "Frecuentemente") score += 1.0;
+        if (data.neuropatiaCase === "Sí") score += 1.0;
+        
+        const q14Resp = data.descarteAL || [];
+        const hasSérica = q14Resp.includes("Inmunofijación sérica");
+        const hasUrinaria = q14Resp.includes("Inmunofijación urinaria");
+        const hasCadenas = q14Resp.includes("Cadenas livianas libres");
+        const hasIncorrect = q14Resp.includes("FAN") || q14Resp.includes("No estoy seguro");
+        
+        if (hasSérica && hasUrinaria && hasCadenas && !hasIncorrect) {
+          score += 2.0;
+        } else if ((hasSérica || hasUrinaria || hasCadenas) && !hasIncorrect) {
+          const count = [hasSérica, hasUrinaria, hasCadenas].filter(Boolean).length;
+          score += count * 0.5; 
+        }
+
+        if (data.rolGammagrafia === "Confirma ATTR en determinados escenarios clínicos") score += 1.5;
+        if (data.referenciaATTR === "Diagnóstico no invasivo posible en escenarios seleccionados") score += 1.5;
+        return parseFloat(score.toFixed(1));
+      };
+
+      const getScoreLevel = (score) => {
+        if (score <= 4.0) return "Bajo";
+        if (score <= 7.5) return "Intermedio";
+        return "Alto";
+      };
+
+      const handleRadioChange = (question, value) => {
+        setFormData(prev => ({ ...prev, [question]: value }));
+        if (errors[question]) {
+          setErrors(prev => { const newErrs = { ...prev }; delete newErrs[question]; return newErrs; });
+        }
+      };
+
+      const handleInputChange = (question, value) => {
+        setFormData(prev => ({ ...prev, [question]: value }));
+        if (errors[question]) {
+          setErrors(prev => { const newErrs = { ...prev }; delete newErrs[question]; return newErrs; });
+        }
+      };
+
+      const handleCheckboxChange = (question, value) => {
+        setFormData(prev => {
+          const currentValues = prev[question] || [];
+          const newValues = currentValues.includes(value)
+            ? currentValues.filter(v => v !== value)
+            : [...currentValues, value];
+          return { ...prev, [question]: newValues };
+        });
+      };
+
+      const validateStep = (step) => {
+        const errs = {};
+        if (step === 1) {
+          if (!formData.dni || formData.dni.trim().length < 6) errs.dni = "Ingrese un número de documento válido (mínimo 6 caracteres)";
+          if (!formData.especialidad) errs.especialidad = "Seleccione su especialidad";
+          if (!formData.pais) errs.pais = "Seleccione su país de ejercicio";
+          if (!formData.experiencia) errs.experiencia = "Seleccione sus años de práctica";
+          if (!formData.setting) errs.setting = "Seleccione su ámbito de trabajo";
+          if (!formData.pacientesAnuales) errs.pacientesAnuales = "Responda la estimación de pacientes";
+        } else if (step === 2) {
+          if (!formData.percepcionConocimiento) errs.percepcionConocimiento = "Por favor, califique su nivel de conocimiento";
+          if (!formData.subtiposConocidos || formData.subtiposConocidos.length === 0) errs.subtiposConocidos = "Seleccione al menos una opción";
+          if (!formData.educacionPrevia) errs.educacionPrevia = "Seleccione si ha participado en actividades educativas";
+        } else if (step === 3) {
+          if (!formData.redFlags || formData.redFlags.length === 0) errs.redFlags = "Seleccione al menos un hallazgo o 'Ninguno'";
+          if (!formData.sugestivoATTR) errs.sugestivoATTR = "Seleccione una opción para ATTR";
+          if (!formData.sugestivoAL) errs.sugestivoAL = "Seleccione una opción para AL";
+          if (!formData.icfepCase) errs.icfepCase = "Responda la consideración clínica de ICFEp";
+          if (!formData.neuropatiaCase) errs.neuropatiaCase = "Responda la consideración clínica de neuropatía";
+        } else if (step === 4) {
+          if (!formData.descarteAL || formData.descarteAL.length === 0) errs.descarteAL = "Seleccione al menos una opción o 'No estoy seguro'";
+          if (!formData.rolGammagrafia) errs.rolGammagrafia = "Seleccione una opción sobre el rol de gammagrafía";
+          if (!formData.referenciaATTR) errs.referenciaATTR = "Seleccione el método de referencia";
+          if (!formData.centroReferencia) errs.centroReferencia = "Responda si conoce un centro de referencia";
+        } else if (step === 5) {
+          if (!formData.frecuenciaSospecha) errs.frecuenciaSospecha = "Especifique con qué frecuencia sospecha la enfermedad";
+          if (!formData.derivacionHabitual) errs.derivacionHabitual = "Seleccione a quién deriva habitualmente";
+          if (!formData.barreraDiagnostico) errs.barreraDiagnostico = "Seleccione la principal barrera diagnóstica";
+        }
+        setErrors(errs);
+        return Object.keys(errs).length === 0;
+      };
+
+      const handleNext = () => { if (validateStep(currentStep)) { setCurrentStep(prev => prev + 1); window.scrollTo(0, 0); } };
+      const handleBack = () => { setCurrentStep(prev => prev - 1); window.scrollTo(0, 0); };
+      const handleOpenDatabase = () => { if (isAdminAuthenticated) { setCurrentStep(7); } else { setShowAdminLogin(true); } };
+
+      const handleAdminVerify = (e) => {
+        e.preventDefault();
+        if (inputPasscode === "admin123") {
+          setIsAdminAuthenticated(true);
+          setShowAdminLogin(false);
+          setInputPasscode("");
+          setCurrentStep(7);
+          triggerToast("Acceso de Administrador verificado", "success");
+        } else {
+          triggerToast("Clave incorrecta. Acceso denegado.", "error");
+        }
+      };
+
+      const handleSubmit = async () => {
+        if (!validateStep(5)) return;
+        setIsSubmitting(true);
+        const score = calculateAKS(formData);
+        const level = getScoreLevel(score);
+        setCalculatedScore(score);
+        setScoreLevel(level);
+
+        const now = new Date();
+        const formattedDate = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+        const newRecord = {
+          timestamp: formattedDate,
+          dni: formData.dni,
+          especialidad: formData.especialidad,
+          pais: formData.pais,
+          experiencia: formData.experiencia,
+          setting: formData.setting,
+          score: score,
+          nivel: level
+        };
+
+        setDbData(prev => [newRecord, ...prev]);
+
+        if (webhookUrl) {
+          try {
+            await fetch(webhookUrl, {
+              method: 'POST',
+              mode: 'no-cors',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ...formData, timestamp: formattedDate, score: score, nivel: level })
+            });
+            triggerToast("Datos enviados y registrados con éxito", "success");
+          } catch (e) {
+            triggerToast("Guardado localmente", "info");
+          }
+        } else {
+          triggerToast("Formulario procesado correctamente de forma local", "success");
+        }
+        setIsSubmitting(false);
+        setCurrentStep(6);
+        window.scrollTo(0, 0);
+      };
+
+      const exportToCSV = () => {
+        const headers = ["Fecha", "DNI", "Especialidad", "País", "Experiencia", "Ámbito", "Score AKS", "Nivel"];
+        const rows = dbData.map(r => [r.timestamp, r.dni, r.especialidad, r.pais, r.experiencia, r.setting, r.score, r.nivel]);
+        let csvContent = "data:text/csv;charset=utf-8,\uFEFF" + [headers.join(","), ...rows.map(e => e.map(val => `"${val}"`).join(","))].join("\n");
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `Amiloidosis_AKS_Resultados.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      };
+
+      const restartForm = () => {
+        setFormData({
+          dni: "", especialidad: "", pais: "", experiencia: "", setting: "", pacientesAnuales: "",
+          percepcionConocimiento: "", subtiposConocidos: [], educacionPrevia: "",
+          redFlags: [], sugestivoATTR: "", sugestivoAL: "", icfepCase: "", neuropatiaCase: "",
+          descarteAL: [], rolGammagrafia: "", referenciaATTR: "", centroReferencia: "",
+          frecuenciaSospecha: "", derivacionHabitual: "", barreraDiagnostico: ""
+        });
+        setErrors({});
+        setCurrentStep(0);
+      };
+
+      const totalSubmissions = dbData.length;
+      const avgScore = totalSubmissions > 0 ? (dbData.reduce((acc, r) => acc + r.score, 0) / totalSubmissions).toFixed(1) : 0;
+      const highPercent = totalSubmissions > 0 ? Math.round((dbData.filter(r => r.nivel === "Alto").length / totalSubmissions) * 100) : 0;
+
+      return (
+        <div className="min-h-screen bg-slate-50 text-slate-800 font-sans relative">
+          {toast.show && (
+            <div className="fixed top-6 right-6 z-50 animate-bounce">
+              <div className={`px-6 py-4 rounded-xl shadow-xl flex items-center gap-3 border ${toast.type === "success" ? "bg-emerald-50 text-emerald-900 border-emerald-200" : toast.type === "error" ? "bg-rose-50 text-rose-900 border-rose-200" : "bg-blue-50 text-blue-900 border-blue-200"}`}>
+                <span className="text-base font-bold">{toast.type === "success" ? "✓" : toast.type === "error" ? "⚠" : "ℹ"}</span>
+                <p className="text-sm font-semibold">{toast.message}</p>
+              </div>
+            </div>
+          )}
+
+          <header className="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-sm">
+            <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-blue-600 text-white rounded-xl shadow-md">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg>
+                </div>
+                <div>
+                  <h1 className="text-xl font-bold text-slate-900">Portal de Amiloidosis</h1>
+                  <p className="text-xs text-slate-500">Evaluación Médica Interactiva • AKS</p>
+                </div>
+              </div>
+              <div>
+                <button onClick={handleOpenDatabase} className="px-4 py-2 text-sm font-semibold rounded-lg bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50 flex items-center gap-2">
+                  Ver Base de Datos (Admin)
+                </button>
+              </div>
+            </div>
+          </header>
+
+          <main className="max-w-4xl mx-auto px-4 py-8">
+            {currentStep > 0 && currentStep <= 5 && (
+              <div className="mb-8 bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+                <div className="flex justify-between items-center text-xs font-semibold text-slate-500 mb-3">
+                  <span>Sección {currentStep} de 5</span>
+                  <span>{Math.round((currentStep / 5) * 100)}% Completado</span>
+                </div>
+                <div className="h-2.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-blue-600 rounded-full transition-all duration-300" style={{ width: `${(currentStep / 5) * 100}%` }}></div>
+                </div>
+              </div>
+            )}
+
+            <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6 md:p-10">
+              {currentStep === 0 && (
+                <div className="text-center py-4">
+                  <h2 className="text-3xl font-extrabold text-slate-900">Cuestionario Diagnóstico sobre Amiloidosis</h2>
+                  <p className="mt-4 text-lg text-slate-600 max-w-2xl mx-auto">Herramienta clínica para evaluar el nivel de sospecha, reconocimiento de "red flags" y conocimiento sobre amiloidosis.</p>
+                  <button onClick={() => setCurrentStep(1)} className="mt-8 px-8 py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-lg hover:bg-blue-700">Comenzar Evaluación</button>
+                </div>
+              )}
+
+              {currentStep === 1 && (
+                <div>
+                  <h3 className="text-2xl font-bold mb-4">Sección 1: Características del participante</h3>
+                  <div className="space-y-6">
+                    <div>
+                      <label className="block text-sm font-bold mb-2">DNI / Identificador Único</label>
+                      <input type="text" className="w-full border rounded-xl p-3" value={formData.dni} onChange={e => handleInputChange("dni", e.target.value)} />
+                      {errors.dni && <p className="text-rose-600 text-xs mt-1">⚠ {errors.dni}</p>}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold mb-2">Especialidad</label>
+                      <select className="w-full border rounded-xl p-3" value={formData.especialidad} onChange={e => handleRadioChange("especialidad", e.target.value)}>
+                        <option value="">Seleccione...</option>
+                        {["Neurología", "Cardiología", "Medicina Interna", "Hematología", "Reumatología", "Geriatría", "Otra"].map(item => <option key={item} value={item}>{item}</option>)}
+                      </select>
+                      {errors.especialidad && <p className="text-rose-600 text-xs mt-1">⚠ {errors.especialidad}</p>}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold mb-2">País</label>
+                      <select className="w-full border rounded-xl p-3" value={formData.pais} onChange={e => handleRadioChange("pais", e.target.value)}>
+                        <option value="">Seleccione su país...</option>
+                        {PAISES.map(p => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                      {errors.pais && <p className="text-rose-600 text-xs mt-1">⚠ {errors.pais}</p>}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold mb-2">Años de Práctica</label>
+                      <select className="w-full border rounded-xl p-3" value={formData.experiencia} onChange={e => handleRadioChange("experiencia", e.target.value)}>
+                        <option value="">Seleccione...</option>
+                        {["<5", "5-10", "11-20", ">20"].map(item => <option key={item} value={item}>{item} años</option>)}
+                      </select>
+                      {errors.experiencia && <p className="text-rose-600 text-xs mt-1">⚠ {errors.experiencia}</p>}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold mb-2">Ámbito principal de trabajo</label>
+                      <select className="w-full border rounded-xl p-3" value={formData.setting} onChange={e => handleRadioChange("setting", e.target.value)}>
+                        <option value="">Seleccione...</option>
+                        {["Hospital público", "Hospital privado", "Universidad", "Consultorio privado", "Mixto"].map(item => <option key={item} value={item}>{item}</option>)}
+                      </select>
+                      {errors.setting && <p className="text-rose-600 text-xs mt-1">⚠ {errors.setting}</p>}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold mb-2">Pacientes atendidos en los últimos 12 meses</label>
+                      <select className="w-full border rounded-xl p-3" value={formData.pacientesAnuales} onChange={e => handleRadioChange("pacientesAnuales", e.target.value)}>
+                        <option value="">Seleccione...</option>
+                        {["Ninguno", "1-5", "6-10", ">10"].map(item => <option key={item} value={item}>{item}</option>)}
+                      </select>
+                      {errors.pacientesAnuales && <p className="text-rose-600 text-xs mt-1">⚠ {errors.pacientesAnuales}</p>}
+                    </div>
+                  </div>
+                  <button onClick={handleNext} className="mt-8 px-6 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 float-right">Siguiente</button>
+                </div>
+              )}
+
+              {currentStep === 2 && (
+                <div>
+                  <h3 className="text-2xl font-bold mb-4">Sección 2: Percepción de conocimiento</h3>
+                  <div className="space-y-6">
+                    <div>
+                      <label className="block text-sm font-bold mb-2">6. ¿Cómo calificaría su conocimiento sobre amiloidosis? (1: Muy bajo - 5: Muy bueno)</label>
+                      <div className="flex gap-2">
+                        {["1", "2", "3", "4", "5"].map(num => (
+                          <button key={num} onClick={() => handleRadioChange("percepcionConocimiento", num)} className={`flex-1 p-3 border rounded-xl font-bold ${formData.percepcionConocimiento === num ? "bg-blue-600 text-white" : "bg-white text-slate-700 hover:bg-slate-100"}`}>{num}</button>
+                        ))}
+                      </div>
+                      {errors.percepcionConocimiento && <p className="text-rose-600 text-xs mt-2">⚠ {errors.percepcionConocimiento}</p>}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold mb-2">7. ¿Qué subtipos conoce? (Múltiple respuesta)</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {["AL", "ATTR hereditaria", "ATTR wild-type", "AA", "No estoy seguro"].map(item => (
+                          <label key={item} className={`p-3 border rounded-xl cursor-pointer flex items-center gap-2 ${formData.subtiposConocidos.includes(item) ? "bg-blue-50 border-blue-300" : ""}`}>
+                            <input type="checkbox" checked={formData.subtiposConocidos.includes(item)} onChange={() => handleCheckboxChange("subtiposConocidos", item)} />
+                            <span>{item}</span>
+                          </label>
+                        ))}
+                      </div>
+                      {errors.subtiposConocidos && <p className="text-rose-600 text-xs mt-2">⚠ {errors.subtiposConocidos}</p>}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold mb-2">8. ¿Ha participado en alguna actividad educativa sobre amiloidosis en los últimos 3 años?</label>
+                      <div className="flex gap-2">
+                        {["Sí", "No"].map(item => (
+                          <button key={item} onClick={() => handleRadioChange("educacionPrevia", item)} className={`flex-1 p-3 border rounded-xl font-bold ${formData.educacionPrevia === item ? "bg-blue-600 text-white" : "bg-white text-slate-700"}`}>{item}</button>
+                        ))}
+                      </div>
+                      {errors.educacionPrevia && <p className="text-rose-600 text-xs mt-2">⚠ {errors.educacionPrevia}</p>}
+                    </div>
+                  </div>
+                  <div className="flex justify-between mt-8">
+                    <button onClick={handleBack} className="px-6 py-3 border rounded-xl hover:bg-slate-100">Atrás</button>
+                    <button onClick={handleNext} className="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700">Siguiente</button>
+                  </div>
+                </div>
+              )}
+
+              {currentStep === 3 && (
+                <div>
+                  <h3 className="text-2xl font-bold mb-4">Sección 3: Reconocimiento de "Red Flags"</h3>
+                  <div className="space-y-6">
+                    <div>
+                      <label className="block text-sm font-bold mb-2">9. ¿Cuáles de los siguientes hallazgos le harían sospechar amiloidosis? (Múltiple)</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {["Túnel carpiano bilateral", "Rotura espontánea del tendón distal del bíceps", "Estenosis lumbar", "Miocardiopatía hipertrófica aparente en >65 años", "Neuropatía sensitivo-motora progresiva", "Disautonomía", "Macroglosia", "Proteinuria inexplicada", "Ninguno de los anteriores"].map(item => (
+                          <label key={item} className="p-3 border rounded-xl cursor-pointer flex items-center gap-2">
+                            <input type="checkbox" checked={formData.redFlags.includes(item)} onChange={() => handleCheckboxChange("redFlags", item)} />
+                            <span className="text-xs">{item}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold mb-2">10. ¿Cuál considera el hallazgo más sugestivo de ATTR? (Opción única)</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {["Hipertensión arterial", "Túnel carpiano bilateral", "Migraña", "Asma"].map(item => (
+                          <button key={item} onClick={() => handleRadioChange("sugestivoATTR", item)} className={`p-3 border rounded-xl ${formData.sugestivoATTR === item ? "bg-blue-600 text-white" : "bg-white"}`}>{item}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold mb-2">11. ¿Cuál considera el hallazgo más sugestivo de amiloidosis AL? (Opción única)</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {["Macroglosia", "Cefalea", "Artritis reumatoidea", "Hipotiroidismo"].map(item => (
+                          <button key={item} onClick={() => handleRadioChange("sugestivoAL", item)} className={`p-3 border rounded-xl ${formData.sugestivoAL === item ? "bg-blue-600 text-white" : "bg-white"}`}>{item}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold mb-2">12. Paciente de 72 años con ICFEp e hipertrofia ventricular izquierda sin HTA significativa. ¿Consideraría amiloidosis en el diagnóstico diferencial?</label>
+                      <div className="grid grid-cols-5 gap-1 text-xs">
+                        {["Siempre", "Frecuentemente", "Ocasionalmente", "Rara vez", "Nunca"].map(item => (
+                          <button key={item} onClick={() => handleRadioChange("icfepCase", item)} className={`p-2 border rounded-xl ${formData.icfepCase === item ? "bg-blue-600 text-white" : "bg-white"}`}>{item}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold mb-2">13. Paciente con neuropatía axonal progresiva y disautonomía. ¿Consideraría ATTR hereditaria?</label>
+                      <div className="flex gap-2">
+                        {["Sí", "No"].map(item => (
+                          <button key={item} onClick={() => handleRadioChange("neuropatiaCase", item)} className={`flex-1 p-3 border rounded-xl ${formData.neuropatiaCase === item ? "bg-blue-600 text-white" : "bg-white"}`}>{item}</button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex justify-between mt-8">
+                    <button onClick={handleBack} className="px-6 py-3 border rounded-xl">Atrás</button>
+                    <button onClick={handleNext} className="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl">Siguiente</button>
+                  </div>
+                </div>
+              )}
+
+              {currentStep === 4 && (
+                <div>
+                  <h3 className="text-2xl font-bold mb-4">Sección 4: Conocimiento Diagnóstico</h3>
+                  <div className="space-y-6">
+                    <div>
+                      <label className="block text-sm font-bold mb-2">14. Para descartar amiloidosis AL solicitaría: (Múltiple)</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {["Inmunofijación sérica", "Inmunofijación urinaria", "Cadenas livianas libres", "FAN", "No estoy seguro"].map(item => (
+                          <label key={item} className="p-3 border rounded-xl cursor-pointer flex items-center gap-2">
+                            <input type="checkbox" checked={formData.descarteAL.includes(item)} onChange={() => handleCheckboxChange("descarteAL", item)} />
+                            <span>{item}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold mb-2">15. ¿Cuál es el rol de la gammagrafía ósea con PYP/DPD/HMDP en ATTR?</label>
+                      <div className="space-y-2">
+                        {["Confirma ATTR en determinados escenarios clínicos", "No tiene utilidad", "Solo sirve para AL", "No estoy seguro"].map(item => (
+                          <button key={item} onClick={() => handleRadioChange("rolGammagrafia", item)} className={`w-full text-left p-3 border rounded-xl ${formData.rolGammagrafia === item ? "bg-blue-600 text-white" : "bg-white"}`}>{item}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold mb-2">16. ¿Cuál considera actualmente el método diagnóstico de referencia para ATTR cardíaca?</label>
+                      <div className="space-y-2">
+                        {["Biopsia obligatoria en todos los casos", "Diagnóstico no invasivo posible en escenarios seleccionados", "ECG", "Radiografía de tórax"].map(item => (
+                          <button key={item} onClick={() => handleRadioChange("referenciaATTR", item)} className={`w-full text-left p-3 border rounded-xl ${formData.referenciaATTR === item ? "bg-blue-600 text-white" : "bg-white"}`}>{item}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold mb-2">17. ¿Conoce algún centro de referencia para amiloidosis en su país?</label>
+                      <div className="flex gap-2">
+                        {["Sí", "No"].map(item => (
+                          <button key={item} onClick={() => handleRadioChange("centroReferencia", item)} className={`flex-1 p-3 border rounded-xl ${formData.centroReferencia === item ? "bg-blue-600 text-white" : "bg-white"}`}>{item}</button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex justify-between mt-8">
+                    <button onClick={handleBack} className="px-6 py-3 border rounded-xl">Atrás</button>
+                    <button onClick={handleNext} className="px-6 py-3 bg-blue-600 text-white font-bold rounded-xl">Siguiente</button>
+                  </div>
+                </div>
+              )}
+
+              {currentStep === 5 && (
+                <div>
+                  <h3 className="text-2xl font-bold mb-4">Sección 5: Práctica Clínica</h3>
+                  <div className="space-y-6">
+                    <div>
+                      <label className="block text-sm font-bold mb-2">18. ¿Con qué frecuencia sospecha amiloidosis en su práctica?</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {["Nunca", "Menos de una vez por mes", "1-5 veces por mes", ">5 veces por mes"].map(item => (
+                          <button key={item} onClick={() => handleRadioChange("frecuenciaSospecha", item)} className={`p-3 border rounded-xl ${formData.frecuenciaSospecha === item ? "bg-blue-600 text-white" : "bg-white"}`}>{item}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold mb-2">19. Cuando sospecha amiloidosis, ¿a quién deriva habitualmente?</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {["Cardiólogo", "Neurólogo", "Hematólogo", "Centro especializado", "No derivo"].map(item => (
+                          <button key={item} onClick={() => handleRadioChange("derivacionHabitual", item)} className={`p-3 border rounded-xl ${formData.derivacionHabitual === item ? "bg-blue-600 text-white" : "bg-white"}`}>{item}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold mb-2">20. Principal barrera para el diagnóstico precoz</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {["Falta de conocimiento", "Baja sospecha clínica", "Acceso limitado a gammagrafía", "Acceso limitado a genética", "Acceso limitado a especialistas", "Costos", "Otra"].map(item => (
+                          <button key={item} onClick={() => handleRadioChange("barreraDiagnostico", item)} className={`p-3 border rounded-xl ${formData.barreraDiagnostico === item ? "bg-blue-600 text-white" : "bg-white"}`}>{item}</button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex justify-between mt-8">
+                    <button onClick={handleBack} className="px-6 py-3 border rounded-xl">Atrás</button>
+                    <button onClick={handleSubmit} disabled={isSubmitting} className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl shadow-lg">{isSubmitting ? "Enviando..." : "Enviar Formulario"}</button>
+                  </div>
+                </div>
+              )}
+
+              {currentStep === 6 && (
+                <div className="text-center py-4">
+                  <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-full uppercase">Evaluación Finalizada</span>
+                  <h3 className="text-3xl font-extrabold text-slate-900 mt-4">Su AKS Score: {calculatedScore} / 10</h3>
+                  <div className="mt-4 inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-extrabold uppercase shadow-sm" style={{
+                    backgroundColor: scoreLevel === "Alto" ? '#ecfdf5' : scoreLevel === "Intermedio" ? '#fef3c7' : '#fff1f2',
+                    color: scoreLevel === "Alto" ? '#047857' : scoreLevel === "Intermedio" ? '#b45309' : '#be123c'
+                  }}>
+                    Nivel de Conocimiento {scoreLevel}
+                  </div>
+                  <p className="mt-4 text-sm text-slate-500">Los datos se han guardado con éxito.</p>
+                  <button onClick={restartForm} className="mt-8 px-6 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700">Realizar otra Evaluación</button>
+                </div>
+              )}
+
+              {currentStep === 7 && (
+                <div>
+                  <h3 className="text-2xl font-bold mb-4">Base de Datos de Respuestas</h3>
+                  <div className="mb-4 p-4 bg-slate-50 rounded-xl">
+                    <label className="block text-xs font-bold text-slate-500 mb-2">Webhook de Google Sheets</label>
+                    <input type="text" className="w-full border rounded-lg p-2" value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} placeholder="Pegar URL de Apps Script..." />
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-slate-100">
+                          <th className="p-2 border">Timestamp</th>
+                          <th className="p-2 border">DNI</th>
+                          <th className="p-2 border">Especialidad</th>
+                          <th className="p-2 border">Score</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dbData.map((row, idx) => (
+                          <tr key={idx} className="border-b">
+                            <td className="p-2 border">{row.timestamp}</td>
+                            <td className="p-2 border">{row.dni}</td>
+                            <td className="p-2 border">{row.especialidad}</td>
+                            <td className="p-2 border font-bold">{row.score}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="mt-6 flex justify-between">
+                    <button onClick={exportToCSV} className="px-4 py-2 bg-emerald-600 text-white rounded-lg">Exportar CSV</button>
+                    <button onClick={() => { setIsAdminAuthenticated(false); setCurrentStep(0); }} className="px-4 py-2 bg-slate-800 text-white rounded-lg">Salir de Admin</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </main>
+
+          {showAdminLogin && (
+            <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-xl">
+                <h3 className="text-lg font-bold mb-2">Acceso Administrador</h3>
+                <input type="password" placeholder="Ingrese clave maestra" className="w-full border rounded-xl p-3" value={inputPasscode} onChange={e => setInputPasscode(e.target.value)} />
+                <div className="mt-4 flex gap-2 justify-end">
+                  <button onClick={() => setShowAdminLogin(false)} className="px-4 py-2 text-xs">Cancelar</button>
+                  <button onClick={handleAdminVerify} className="px-4 py-2 text-xs bg-blue-600 text-white rounded-lg">Validar</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
