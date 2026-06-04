@@ -4,33 +4,25 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Portal de Amiloidosis - Evaluación Médica</title>
-  <!-- Tailwind CSS para el diseño visual limpio -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- React y ReactDOM desde CDN -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-  <!-- Babel para compilar el código JSX en tiempo de ejecución en el navegador -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </head>
 <body class="bg-slate-50 text-slate-800 font-sans">
 
-  <!-- Contenedor donde se montará nuestra aplicación React -->
   <div id="root"></div>
 
-  <!-- Tu código de React (el mismo que diseñamos en Canvas) adaptado para ejecutarse aquí -->
   <script type="text/babel">
     const { useState } = React;
 
-    const PAISES = [
-      "Argentina", "Bolivia", "Brasil", "Chile", "Colombia", "Costa Rica", "Cuba", 
-      "Ecuador", "El Salvador", "España", "Guatemala", "Honduras", "México", 
-      "Nicaragua", "Panamá", "Paraguay", "Perú", "Puerto Rico", "República Dominicana", 
-      "Uruguay", "Venezuela", "Otro"
-    ];
+    const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwL-Z4zDUA5j8xhoZRSmgpEKDuimzo64zMYfIEx-TNaDQcM62lv65ro9bf_ni8q4DR_4Q/exec";
 
-    const MOCK_DB_INITIAL = [
-      { timestamp: "2026-06-01 10:24", dni: "12345678", especialidad: "Cardiología", pais: "Argentina", experiencia: "11-20", setting: "Hospital público", score: 8.5, nivel: "Alto" },
-      { timestamp: "2026-06-01 14:15", dni: "98765432", especialidad: "Neurología", pais: "España", experiencia: "5-10", setting: "Mixto", score: 7.0, nivel: "Intermedio" }
+    const PAISES = [
+      "Argentina", "Bolivia", "Brasil", "Chile", "Colombia", "Costa Rica", "Cuba",
+      "Ecuador", "El Salvador", "España", "Guatemala", "Honduras", "México",
+      "Nicaragua", "Panamá", "Paraguay", "Perú", "Puerto Rico", "República Dominicana",
+      "Uruguay", "Venezuela", "Otro"
     ];
 
     function App() {
@@ -38,21 +30,15 @@
       const [formData, setFormData] = useState({
         dni: "", especialidad: "", pais: "", experiencia: "", setting: "", pacientesAnuales: "",
         percepcionConocimiento: "", subtiposConocidos: [], educacionPrevia: "",
-        redFlags: [], sugestivoATTR: "", sugestivoAL: "", icfepCase: "",  neuropatiaCase: "",
+        redFlags: [], sugestivoATTR: "", sugestivoAL: "", icfepCase: "", neuropatiaCase: "",
         descarteAL: [], rolGammagrafia: "", referenciaATTR: "", centroReferencia: "",
         frecuenciaSospecha: "", derivacionHabitual: "", barreraDiagnostico: ""
       });
 
-      const [dbData, setDbData] = useState(MOCK_DB_INITIAL);
-      const [webhookUrl, setWebhookUrl] = useState("https://script.google.com/macros/s/AKfycbwL-Z4zDUA5j8xhoZRSmgpEKDuimzo64zMYfIEx-TNaDQcM62lv65ro9bf_ni8q4DR_4Q/exec");
       const [isSubmitting, setIsSubmitting] = useState(false);
       const [errors, setErrors] = useState({});
       const [calculatedScore, setCalculatedScore] = useState(0);
       const [scoreLevel, setScoreLevel] = useState("");
-      const [showScriptModal, setShowScriptModal] = useState(false);
-      const [showAdminLogin, setShowAdminLogin] = useState(false);
-      const [inputPasscode, setInputPasscode] = useState("");
-      const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
       const [toast, setToast] = useState({ show: false, message: "", type: "info" });
 
       const triggerToast = (message, type = "info") => {
@@ -66,18 +52,18 @@
         if (data.sugestivoAL === "Macroglosia") score += 1.5;
         if (data.icfepCase === "Siempre" || data.icfepCase === "Frecuentemente") score += 1.0;
         if (data.neuropatiaCase === "Sí") score += 1.0;
-        
+
         const q14Resp = data.descarteAL || [];
         const hasSérica = q14Resp.includes("Inmunofijación sérica");
         const hasUrinaria = q14Resp.includes("Inmunofijación urinaria");
         const hasCadenas = q14Resp.includes("Cadenas livianas libres");
         const hasIncorrect = q14Resp.includes("FAN") || q14Resp.includes("No estoy seguro");
-        
+
         if (hasSérica && hasUrinaria && hasCadenas && !hasIncorrect) {
           score += 2.0;
         } else if ((hasSérica || hasUrinaria || hasCadenas) && !hasIncorrect) {
           const count = [hasSérica, hasUrinaria, hasCadenas].filter(Boolean).length;
-          score += count * 0.5; 
+          score += count * 0.5;
         }
 
         if (data.rolGammagrafia === "Confirma ATTR en determinados escenarios clínicos") score += 1.5;
@@ -93,25 +79,19 @@
 
       const handleRadioChange = (question, value) => {
         setFormData(prev => ({ ...prev, [question]: value }));
-        if (errors[question]) {
-          setErrors(prev => { const newErrs = { ...prev }; delete newErrs[question]; return newErrs; });
-        }
+        if (errors[question]) setErrors(prev => { const e = { ...prev }; delete e[question]; return e; });
       };
 
       const handleInputChange = (question, value) => {
         setFormData(prev => ({ ...prev, [question]: value }));
-        if (errors[question]) {
-          setErrors(prev => { const newErrs = { ...prev }; delete newErrs[question]; return newErrs; });
-        }
+        if (errors[question]) setErrors(prev => { const e = { ...prev }; delete e[question]; return e; });
       };
 
       const handleCheckboxChange = (question, value) => {
         setFormData(prev => {
-          const currentValues = prev[question] || [];
-          const newValues = currentValues.includes(value)
-            ? currentValues.filter(v => v !== value)
-            : [...currentValues, value];
-          return { ...prev, [question]: newValues };
+          const current = prev[question] || [];
+          const next = current.includes(value) ? current.filter(v => v !== value) : [...current, value];
+          return { ...prev, [question]: next };
         });
       };
 
@@ -150,20 +130,6 @@
 
       const handleNext = () => { if (validateStep(currentStep)) { setCurrentStep(prev => prev + 1); window.scrollTo(0, 0); } };
       const handleBack = () => { setCurrentStep(prev => prev - 1); window.scrollTo(0, 0); };
-      const handleOpenDatabase = () => { if (isAdminAuthenticated) { setCurrentStep(7); } else { setShowAdminLogin(true); } };
-
-      const handleAdminVerify = (e) => {
-        e.preventDefault();
-        if (inputPasscode === "admin123") {
-          setIsAdminAuthenticated(true);
-          setShowAdminLogin(false);
-          setInputPasscode("");
-          setCurrentStep(7);
-          triggerToast("Acceso de Administrador verificado", "success");
-        } else {
-          triggerToast("Clave incorrecta. Acceso denegado.", "error");
-        }
-      };
 
       const handleSubmit = async () => {
         if (!validateStep(5)) return;
@@ -174,52 +140,22 @@
         setScoreLevel(level);
 
         const now = new Date();
-        const formattedDate = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        const formattedDate = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
 
-        const newRecord = {
-          timestamp: formattedDate,
-          dni: formData.dni,
-          especialidad: formData.especialidad,
-          pais: formData.pais,
-          experiencia: formData.experiencia,
-          setting: formData.setting,
-          score: score,
-          nivel: level
-        };
-
-        setDbData(prev => [newRecord, ...prev]);
-
-        if (webhookUrl) {
-          try {
-            await fetch(webhookUrl, {
-              method: 'POST',
-              mode: 'no-cors',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ ...formData, timestamp: formattedDate, score: score, nivel: level })
-            });
-            triggerToast("Datos enviados y registrados con éxito", "success");
-          } catch (e) {
-            triggerToast("Guardado localmente", "info");
-          }
-        } else {
-          triggerToast("Formulario procesado correctamente de forma local", "success");
+        try {
+          await fetch(WEBHOOK_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...formData, timestamp: formattedDate, score, nivel: level })
+          });
+          triggerToast("Datos enviados y registrados con éxito", "success");
+        } catch (e) {
+          triggerToast("Error al enviar. Intente nuevamente.", "error");
         }
         setIsSubmitting(false);
         setCurrentStep(6);
         window.scrollTo(0, 0);
-      };
-
-      const exportToCSV = () => {
-        const headers = ["Fecha", "DNI", "Especialidad", "País", "Experiencia", "Ámbito", "Score AKS", "Nivel"];
-        const rows = dbData.map(r => [r.timestamp, r.dni, r.especialidad, r.pais, r.experiencia, r.setting, r.score, r.nivel]);
-        let csvContent = "data:text/csv;charset=utf-8,\uFEFF" + [headers.join(","), ...rows.map(e => e.map(val => `"${val}"`).join(","))].join("\n");
-        const encodedUri = encodeURI(csvContent);
-        const link = document.createElement("a");
-        link.setAttribute("href", encodedUri);
-        link.setAttribute("download", `Amiloidosis_AKS_Resultados.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
       };
 
       const restartForm = () => {
@@ -234,10 +170,6 @@
         setCurrentStep(0);
       };
 
-      const totalSubmissions = dbData.length;
-      const avgScore = totalSubmissions > 0 ? (dbData.reduce((acc, r) => acc + r.score, 0) / totalSubmissions).toFixed(1) : 0;
-      const highPercent = totalSubmissions > 0 ? Math.round((dbData.filter(r => r.nivel === "Alto").length / totalSubmissions) * 100) : 0;
-
       return (
         <div className="min-h-screen bg-slate-50 text-slate-800 font-sans relative">
           {toast.show && (
@@ -250,20 +182,13 @@
           )}
 
           <header className="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-sm">
-            <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-blue-600 text-white rounded-xl shadow-md">
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg>
-                </div>
-                <div>
-                  <h1 className="text-xl font-bold text-slate-900">Portal de Amiloidosis</h1>
-                  <p className="text-xs text-slate-500">Evaluación Médica Interactiva • AKS</p>
-                </div>
+            <div className="max-w-6xl mx-auto px-4 py-4 flex items-center gap-3">
+              <div className="p-2.5 bg-blue-600 text-white rounded-xl shadow-md">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg>
               </div>
               <div>
-                <button onClick={handleOpenDatabase} className="px-4 py-2 text-sm font-semibold rounded-lg bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50 flex items-center gap-2">
-                  Ver Base de Datos (Admin)
-                </button>
+                <h1 className="text-xl font-bold text-slate-900">Portal de Amiloidosis</h1>
+                <p className="text-xs text-slate-500">Evaluación Médica Interactiva • AKS</p>
               </div>
             </div>
           </header>
@@ -282,6 +207,7 @@
             )}
 
             <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-6 md:p-10">
+
               {currentStep === 0 && (
                 <div className="text-center py-4">
                   <h2 className="text-3xl font-extrabold text-slate-900">Cuestionario Diagnóstico sobre Amiloidosis</h2>
@@ -394,12 +320,13 @@
                       <label className="block text-sm font-bold mb-2">9. ¿Cuáles de los siguientes hallazgos le harían sospechar amiloidosis? (Múltiple)</label>
                       <div className="grid grid-cols-2 gap-2">
                         {["Túnel carpiano bilateral", "Rotura espontánea del tendón distal del bíceps", "Estenosis lumbar", "Miocardiopatía hipertrófica aparente en >65 años", "Neuropatía sensitivo-motora progresiva", "Disautonomía", "Macroglosia", "Proteinuria inexplicada", "Ninguno de los anteriores"].map(item => (
-                          <label key={item} className="p-3 border rounded-xl cursor-pointer flex items-center gap-2">
+                          <label key={item} className={`p-3 border rounded-xl cursor-pointer flex items-center gap-2 ${formData.redFlags.includes(item) ? "bg-blue-50 border-blue-300" : ""}`}>
                             <input type="checkbox" checked={formData.redFlags.includes(item)} onChange={() => handleCheckboxChange("redFlags", item)} />
                             <span className="text-xs">{item}</span>
                           </label>
                         ))}
                       </div>
+                      {errors.redFlags && <p className="text-rose-600 text-xs mt-2">⚠ {errors.redFlags}</p>}
                     </div>
                     <div>
                       <label className="block text-sm font-bold mb-2">10. ¿Cuál considera el hallazgo más sugestivo de ATTR? (Opción única)</label>
@@ -408,6 +335,7 @@
                           <button key={item} onClick={() => handleRadioChange("sugestivoATTR", item)} className={`p-3 border rounded-xl ${formData.sugestivoATTR === item ? "bg-blue-600 text-white" : "bg-white"}`}>{item}</button>
                         ))}
                       </div>
+                      {errors.sugestivoATTR && <p className="text-rose-600 text-xs mt-2">⚠ {errors.sugestivoATTR}</p>}
                     </div>
                     <div>
                       <label className="block text-sm font-bold mb-2">11. ¿Cuál considera el hallazgo más sugestivo de amiloidosis AL? (Opción única)</label>
@@ -416,6 +344,7 @@
                           <button key={item} onClick={() => handleRadioChange("sugestivoAL", item)} className={`p-3 border rounded-xl ${formData.sugestivoAL === item ? "bg-blue-600 text-white" : "bg-white"}`}>{item}</button>
                         ))}
                       </div>
+                      {errors.sugestivoAL && <p className="text-rose-600 text-xs mt-2">⚠ {errors.sugestivoAL}</p>}
                     </div>
                     <div>
                       <label className="block text-sm font-bold mb-2">12. Paciente de 72 años con ICFEp e hipertrofia ventricular izquierda sin HTA significativa. ¿Consideraría amiloidosis en el diagnóstico diferencial?</label>
@@ -424,6 +353,7 @@
                           <button key={item} onClick={() => handleRadioChange("icfepCase", item)} className={`p-2 border rounded-xl ${formData.icfepCase === item ? "bg-blue-600 text-white" : "bg-white"}`}>{item}</button>
                         ))}
                       </div>
+                      {errors.icfepCase && <p className="text-rose-600 text-xs mt-2">⚠ {errors.icfepCase}</p>}
                     </div>
                     <div>
                       <label className="block text-sm font-bold mb-2">13. Paciente con neuropatía axonal progresiva y disautonomía. ¿Consideraría ATTR hereditaria?</label>
@@ -432,6 +362,7 @@
                           <button key={item} onClick={() => handleRadioChange("neuropatiaCase", item)} className={`flex-1 p-3 border rounded-xl ${formData.neuropatiaCase === item ? "bg-blue-600 text-white" : "bg-white"}`}>{item}</button>
                         ))}
                       </div>
+                      {errors.neuropatiaCase && <p className="text-rose-600 text-xs mt-2">⚠ {errors.neuropatiaCase}</p>}
                     </div>
                   </div>
                   <div className="flex justify-between mt-8">
@@ -449,12 +380,13 @@
                       <label className="block text-sm font-bold mb-2">14. Para descartar amiloidosis AL solicitaría: (Múltiple)</label>
                       <div className="grid grid-cols-2 gap-2">
                         {["Inmunofijación sérica", "Inmunofijación urinaria", "Cadenas livianas libres", "FAN", "No estoy seguro"].map(item => (
-                          <label key={item} className="p-3 border rounded-xl cursor-pointer flex items-center gap-2">
+                          <label key={item} className={`p-3 border rounded-xl cursor-pointer flex items-center gap-2 ${formData.descarteAL.includes(item) ? "bg-blue-50 border-blue-300" : ""}`}>
                             <input type="checkbox" checked={formData.descarteAL.includes(item)} onChange={() => handleCheckboxChange("descarteAL", item)} />
                             <span>{item}</span>
                           </label>
                         ))}
                       </div>
+                      {errors.descarteAL && <p className="text-rose-600 text-xs mt-2">⚠ {errors.descarteAL}</p>}
                     </div>
                     <div>
                       <label className="block text-sm font-bold mb-2">15. ¿Cuál es el rol de la gammagrafía ósea con PYP/DPD/HMDP en ATTR?</label>
@@ -463,6 +395,7 @@
                           <button key={item} onClick={() => handleRadioChange("rolGammagrafia", item)} className={`w-full text-left p-3 border rounded-xl ${formData.rolGammagrafia === item ? "bg-blue-600 text-white" : "bg-white"}`}>{item}</button>
                         ))}
                       </div>
+                      {errors.rolGammagrafia && <p className="text-rose-600 text-xs mt-2">⚠ {errors.rolGammagrafia}</p>}
                     </div>
                     <div>
                       <label className="block text-sm font-bold mb-2">16. ¿Cuál considera actualmente el método diagnóstico de referencia para ATTR cardíaca?</label>
@@ -471,6 +404,7 @@
                           <button key={item} onClick={() => handleRadioChange("referenciaATTR", item)} className={`w-full text-left p-3 border rounded-xl ${formData.referenciaATTR === item ? "bg-blue-600 text-white" : "bg-white"}`}>{item}</button>
                         ))}
                       </div>
+                      {errors.referenciaATTR && <p className="text-rose-600 text-xs mt-2">⚠ {errors.referenciaATTR}</p>}
                     </div>
                     <div>
                       <label className="block text-sm font-bold mb-2">17. ¿Conoce algún centro de referencia para amiloidosis en su país?</label>
@@ -479,6 +413,7 @@
                           <button key={item} onClick={() => handleRadioChange("centroReferencia", item)} className={`flex-1 p-3 border rounded-xl ${formData.centroReferencia === item ? "bg-blue-600 text-white" : "bg-white"}`}>{item}</button>
                         ))}
                       </div>
+                      {errors.centroReferencia && <p className="text-rose-600 text-xs mt-2">⚠ {errors.centroReferencia}</p>}
                     </div>
                   </div>
                   <div className="flex justify-between mt-8">
@@ -499,6 +434,7 @@
                           <button key={item} onClick={() => handleRadioChange("frecuenciaSospecha", item)} className={`p-3 border rounded-xl ${formData.frecuenciaSospecha === item ? "bg-blue-600 text-white" : "bg-white"}`}>{item}</button>
                         ))}
                       </div>
+                      {errors.frecuenciaSospecha && <p className="text-rose-600 text-xs mt-2">⚠ {errors.frecuenciaSospecha}</p>}
                     </div>
                     <div>
                       <label className="block text-sm font-bold mb-2">19. Cuando sospecha amiloidosis, ¿a quién deriva habitualmente?</label>
@@ -507,6 +443,7 @@
                           <button key={item} onClick={() => handleRadioChange("derivacionHabitual", item)} className={`p-3 border rounded-xl ${formData.derivacionHabitual === item ? "bg-blue-600 text-white" : "bg-white"}`}>{item}</button>
                         ))}
                       </div>
+                      {errors.derivacionHabitual && <p className="text-rose-600 text-xs mt-2">⚠ {errors.derivacionHabitual}</p>}
                     </div>
                     <div>
                       <label className="block text-sm font-bold mb-2">20. Principal barrera para el diagnóstico precoz</label>
@@ -515,11 +452,12 @@
                           <button key={item} onClick={() => handleRadioChange("barreraDiagnostico", item)} className={`p-3 border rounded-xl ${formData.barreraDiagnostico === item ? "bg-blue-600 text-white" : "bg-white"}`}>{item}</button>
                         ))}
                       </div>
+                      {errors.barreraDiagnostico && <p className="text-rose-600 text-xs mt-2">⚠ {errors.barreraDiagnostico}</p>}
                     </div>
                   </div>
                   <div className="flex justify-between mt-8">
                     <button onClick={handleBack} className="px-6 py-3 border rounded-xl">Atrás</button>
-                    <button onClick={handleSubmit} disabled={isSubmitting} className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl shadow-lg">{isSubmitting ? "Enviando..." : "Enviar Formulario"}</button>
+                    <button onClick={handleSubmit} disabled={isSubmitting} className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl shadow-lg disabled:opacity-60">{isSubmitting ? "Enviando..." : "Enviar Formulario"}</button>
                   </div>
                 </div>
               )}
@@ -534,61 +472,13 @@
                   }}>
                     Nivel de Conocimiento {scoreLevel}
                   </div>
-                  <p className="mt-4 text-sm text-slate-500">Los datos se han guardado con éxito.</p>
+                  <p className="mt-4 text-sm text-slate-500">Sus respuestas han sido registradas. Muchas gracias por su participación.</p>
                   <button onClick={restartForm} className="mt-8 px-6 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700">Realizar otra Evaluación</button>
                 </div>
               )}
 
-              {currentStep === 7 && (
-                <div>
-                  <h3 className="text-2xl font-bold mb-4">Base de Datos de Respuestas</h3>
-                  <div className="mb-4 p-4 bg-slate-50 rounded-xl">
-                    <label className="block text-xs font-bold text-slate-500 mb-2">Webhook de Google Sheets</label>
-                    <input type="text" className="w-full border rounded-lg p-2" value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} placeholder="Pegar URL de Apps Script..." />
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="bg-slate-100">
-                          <th className="p-2 border">Timestamp</th>
-                          <th className="p-2 border">DNI</th>
-                          <th className="p-2 border">Especialidad</th>
-                          <th className="p-2 border">Score</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {dbData.map((row, idx) => (
-                          <tr key={idx} className="border-b">
-                            <td className="p-2 border">{row.timestamp}</td>
-                            <td className="p-2 border">{row.dni}</td>
-                            <td className="p-2 border">{row.especialidad}</td>
-                            <td className="p-2 border font-bold">{row.score}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div className="mt-6 flex justify-between">
-                    <button onClick={exportToCSV} className="px-4 py-2 bg-emerald-600 text-white rounded-lg">Exportar CSV</button>
-                    <button onClick={() => { setIsAdminAuthenticated(false); setCurrentStep(0); }} className="px-4 py-2 bg-slate-800 text-white rounded-lg">Salir de Admin</button>
-                  </div>
-                </div>
-              )}
             </div>
           </main>
-
-          {showAdminLogin && (
-            <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center p-4 z-50">
-              <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-xl">
-                <h3 className="text-lg font-bold mb-2">Acceso Administrador</h3>
-                <input type="password" placeholder="Ingrese clave maestra" className="w-full border rounded-xl p-3" value={inputPasscode} onChange={e => setInputPasscode(e.target.value)} />
-                <div className="mt-4 flex gap-2 justify-end">
-                  <button onClick={() => setShowAdminLogin(false)} className="px-4 py-2 text-xs">Cancelar</button>
-                  <button onClick={handleAdminVerify} className="px-4 py-2 text-xs bg-blue-600 text-white rounded-lg">Validar</button>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       );
     }
